@@ -156,6 +156,17 @@ button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
 .pulse{animation:pl .55s ease-out}
 @keyframes pl{0%{box-shadow:0 0 0 0 rgba(74,222,128,.5)}100%{box-shadow:0 0 0 16px rgba(74,222,128,0)}}
 .qk{display:flex;flex-wrap:wrap;gap:8px}.qkb{background:var(--card2);border:1px solid var(--line);border-radius:11px;padding:9px 12px;font-size:13px;color:var(--tx2);text-align:left;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.qkb:active{transform:scale(.97)}.hidden{display:none!important}
+/* ---- v2 ---- */
+.hit{touch-action:pan-y}
+.ord{display:flex;flex-direction:column;gap:5px;flex:none}
+.ord button{width:46px;height:26px;border-radius:9px;background:var(--card);border:1px solid var(--line);color:var(--tx2);font-size:13px;display:grid;place-items:center}
+.ord button:active{background:var(--card2)}
+.ord button:disabled{opacity:.25}
+.dayc{display:flex;gap:7px;flex-wrap:wrap}
+.dayc button{padding:9px 14px;border-radius:11px;background:#12151a;border:1px solid var(--line);font-size:13px;color:var(--tx3)}
+.dayc button.on{border-color:currentColor;color:var(--tx);background:var(--card2)}
+.note{font-size:12px;color:var(--tx3);margin:-3px 0 13px;line-height:1.55}
+.tiny.on{border-color:var(--invest);color:var(--invest)}
 </style>
 </head>
 <body>
@@ -195,7 +206,7 @@ button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
   <!-- 分类记录页 -->
   <section id="pgCat" class="hidden">
     <div class="card" id="catHead"></div>
-    <div class="sec-h"><h2 id="catTitle">投资型</h2><span class="cnt" id="catCnt"></span></div>
+    <div class="sec-h"><h2 id="catTitle">投资型</h2><span style="display:flex;align-items:center;gap:9px"><span class="cnt" id="catCnt"></span><button class="tiny" id="btnSort">⇅ 排序</button></span></div>
     <div id="itemList"></div>
     <button class="addbar" id="btnAddCat">＋ 添加一件事</button>
   </section>
@@ -258,6 +269,9 @@ button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
   <div class="pn">
     <div class="handle"></div>
     <h3 id="shNumTitle">记一下</h3>
+    <div class="fld"><label>记到哪天</label><div class="dayc" id="fDay"></div>
+      <input id="fDate" type="date" class="hidden" style="margin-top:9px"></div>
+    <div class="note" id="nNum">—</div>
     <div class="fld"><label id="lNum">数值</label><input id="fNum" type="number" inputmode="decimal" placeholder="0"></div>
     <div class="rowbtn">
       <button class="b2" data-close>取消</button>
@@ -312,12 +326,12 @@ var DEFAULTS=[
  {id:'r2',name:'午睡',cat:'recover',unit:'min',w:3,em:'😴'},
  {id:'r3',name:'运动',cat:'recover',unit:'count',w:4,em:'🏃'},
  {id:'r4',name:'找朋友玩',cat:'recover',unit:'count',w:4,em:'👥'},
- {id:'r5',name:'早睡',cat:'recover',unit:'count',w:4,em:'🌙'},
+ {id:'r5',name:'早睡',cat:'recover',unit:'count',w:4,max:1,em:'🌙'},
  {id:'r6',name:'冥想',cat:'recover',unit:'min',w:3,em:'🧘'},
  {id:'r7',name:'喝杯椰子水／无糖饮料',cat:'recover',unit:'count',w:1,em:'🥥'},
  {id:'r8',name:'骑单车到湖边公园逛一逛',cat:'recover',unit:'min',w:3,em:'🚲'},
  {id:'c1',name:'刷短视频',cat:'consume',unit:'min',w:4,em:'📺'},
- {id:'c2',name:'熬夜',cat:'consume',unit:'count',w:4,em:'🌚'},
+ {id:'c2',name:'熬夜',cat:'consume',unit:'count',w:4,max:1,em:'🌚'},
  {id:'c3',name:'无目的地瞎逛',cat:'consume',unit:'count',w:2,em:'🌀'},
  {id:'s1',name:'这一餐省了',cat:'save',unit:'yuan',w:3,em:'🍚'},
  {id:'s2',name:'少买一杯饮料／外卖',cat:'save',unit:'yuan',w:2,em:'🥤'}
@@ -332,11 +346,21 @@ function shift(k,n){var d=parseDk(k);d.setDate(d.getDate()+n);
 function wk(k){return '日一二三四五六'[parseDk(k).getDay()];}
 function md(k){var a=k.split('-');return (+a[1])+'/'+(+a[2]);}
 
-function fresh(){return {items:JSON.parse(JSON.stringify(DEFAULTS)),log:{},v:1};}
+function fresh(){return {items:JSON.parse(JSON.stringify(DEFAULTS)),log:{},v:2};}
 var S;
 try{var raw=localStorage.getItem(LS);S=raw?JSON.parse(raw):fresh();}catch(e){S=fresh();}
 if(!S||!S.items||!S.items.length)S=fresh();
 function save(){try{localStorage.setItem(LS,JSON.stringify(S));}catch(e){toast('存储空间不足');}}
+function migrate(){
+  if((S.v||1)<2){
+    DEFAULTS.forEach(function(d){
+      if(!d.max)return;
+      for(var i=0;i<S.items.length;i++)if(S.items[i].id===d.id)S.items[i].max=d.max;
+    });
+    S.v=2;save();
+  }
+}
+migrate();
 
 /* ---------- 计分 ---------- */
 var UP=[1,.6,.35,.15,.05], DN=[1,1.5,2.2,3,3];
@@ -417,8 +441,8 @@ function monthSave(){
 }
 
 /* ---------- 记录 ---------- */
-function bump(it,val){
-  var day=todayKey();
+function bump(it,val,day){
+  day=day||todayKey();
   if(!S.log[day])S.log[day]={};
   if(!S.log[day][it.id])S.log[day][it.id]={n:0,v:0};
   var r=S.log[day][it.id];
@@ -597,40 +621,90 @@ function renderBt(){
 /* ---------- 分类记录页 ---------- */
 function catHint(c){
   if(c==='invest')return '分量重的别躲。点一下就算，长按能补记。';
-  if(c==='recover')return '恢复是门槛不是加分项，低于 9 分当天判透支。';
+  if(c==='recover')return '恢复是门槛不是加分项，低于 9 分当天判透支。一天只做一次的事（早睡），记满就点不动了。';
   if(c==='consume')return '越刷扣得越狠，但当天最多扣 30 分——崩了也别放弃。';
   return '这餐省了多少、少买了什么，点一下填金额。';
 }
 function byId(id){for(var i=0;i<S.items.length;i++)if(S.items[i].id===id)return S.items[i];return null;}
 
 function bindPress(el,onTap,onLong){
-  var timer=null,longed=false;
+  var timer=null,longed=false,moved=false,sx=0,sy=0,buzz=function(n){try{if(navigator.vibrate)navigator.vibrate(n);}catch(e){}};
   if('ontouchstart' in window){
-    el.addEventListener('touchstart',function(){longed=false;
-      timer=setTimeout(function(){longed=true;try{if(navigator.vibrate)navigator.vibrate(12);}catch(e){}onLong();},520);},{passive:true});
-    el.addEventListener('touchmove',function(){clearTimeout(timer);},{passive:true});
-    el.addEventListener('touchend',function(e){clearTimeout(timer);if(!longed){e.preventDefault();onTap();}});
-    el.addEventListener('touchcancel',function(){clearTimeout(timer);});
+    el.addEventListener('touchstart',function(e){
+      longed=false;moved=false;
+      var t=e.touches[0];sx=t.clientX;sy=t.clientY;
+      timer=setTimeout(function(){longed=true;buzz(14);onLong();},480);
+    },{passive:true});
+    el.addEventListener('touchmove',function(e){
+      if(moved)return;
+      var t=e.touches[0];
+      if(Math.abs(t.clientX-sx)>9||Math.abs(t.clientY-sy)>9){moved=true;clearTimeout(timer);}
+    },{passive:true});
+    el.addEventListener('touchend',function(e){
+      clearTimeout(timer);
+      if(longed||moved)return;
+      e.preventDefault();onTap();
+    });
+    el.addEventListener('touchcancel',function(){clearTimeout(timer);moved=true;});
   }else{
-    el.addEventListener('click',onTap);
+    var lt=null;
+    el.addEventListener('mousedown',function(e){
+      if(e.button!==0)return;
+      longed=false;moved=false;
+      lt=setTimeout(function(){longed=true;onLong();},480);
+    });
+    el.addEventListener('mouseup',function(){
+      clearTimeout(lt);
+      if(!longed&&!moved)onTap();
+      longed=false;moved=false;
+    });
+    el.addEventListener('mouseleave',function(){clearTimeout(lt);});
     el.addEventListener('contextmenu',function(e){e.preventDefault();onLong();});
   }
 }
 
-function onHit(it){
+function dayText(k){
+  var t=todayKey();
+  if(k===t)return '今天';
+  if(k===shift(t,-1))return '昨天';
+  if(k===shift(t,-2))return '前天';
+  return k.replace(/-/g,'/');
+}
+function capLeft(it,day){
+  if(!it.max)return 99;
+  var r=recOf(day,it.id);
+  return Math.max(0,it.max-(r?r.n:0));
+}
+function onHit(it,day){
+  day=day||todayKey();
+  if(it.unit==='count'&&capLeft(it,day)<=0){
+    toast('「'+it.name+'」'+dayText(day)+'已经记满了');
+    return;
+  }
   if(it.unit==='count'){
-    var r=bump(it,1);
+    var r=bump(it,1,day);
     try{if(navigator.vibrate)navigator.vibrate(8);}catch(e){}
-    toast(CAT[it.cat].n+' · '+it.name+(r.n>1?('（今天第 '+r.n+' 次）'):''));
+    toast(dayText(day)+' · '+it.name+(it.max?(' '+r.n+'/'+it.max):(r.n>1?(' 第 '+r.n+' 次'):' 记上了')));
     render();
-  }else openNum(it);
+  }else openEntry(it,day);
 }
 
+var sortMode=false;
+function moveItem(it,dir){
+  var same=S.items.filter(function(x){return x.cat===it.cat;});
+  var i=same.indexOf(it),j=i+dir;
+  if(j<0||j>=same.length)return;
+  var a=S.items.indexOf(it),b=S.items.indexOf(same[j]);
+  S.items[a]=same[j];S.items[b]=it;
+  save();renderCat(it.cat);
+}
 function renderCat(cat){
   var day=todayKey(),t=dayScore(day);
   var items=S.items.filter(function(it){return it.cat===cat;});
   $('catTitle').textContent=CAT[cat].n;
   $('catCnt').textContent=items.length+' 件';
+  var sb=$('btnSort');
+  if(sb){sb.textContent=sortMode?'完成':'⇅ 排序';sb.classList.toggle('on',sortMode);}
   var val=(cat==='save')?('¥'+t.save):((cat==='consume'?'−':'+')+t[cat]);
   var d=S.log[day]||{},lastId=null;
   for(var k in d){var x=byId(k);if(x&&x.cat===cat)lastId=k;}
@@ -646,13 +720,14 @@ function renderCat(cat){
   }
   var list=$('itemList');list.innerHTML='';
   if(!items.length)list.appendChild(h('div','empty','这个分类还是空的。<br>点下面的按钮加一件事。'));
-  items.forEach(function(it){
+  items.forEach(function(it,idx){
     var r=recOf(day,it.id),sc=itemScore(it,day);
     var wrap=h('div','item');
     var hit=h('button','hit'+(r?' done':''));
-    var sub=it.unit==='min'?'点一下记一次 · 长按记分钟'
+    var sub=it.unit==='min'?'点一下记分钟 · 长按补记'
            :it.unit==='yuan'?'点一下填金额 · 长按补记'
-           :'点一下记一次 · 长按记多次';
+           :'点一下记一次 · 长按补记';
+    if(it.max)sub=sub+' · 每天最多 '+it.max+' 次';
     var right='';
     if(r){
       var show=it.unit==='min'?(r.v+' 分钟'):it.unit==='yuan'?('¥'+r.v):(r.n+' 次');
@@ -661,10 +736,20 @@ function renderCat(cat){
     }
     hit.innerHTML='<span class="em">'+(it.em||'·')+'</span><span class="nm">'+esc(it.name)+
       (it.bt==='break'?' <span class="tag t">突破</span>':'')+'<s>'+sub+'</s></span>'+right;
-    var mini=h('button','mini','✎');
-    bindPress(hit,function(){onHit(it);},function(){openNum(it);});
-    mini.addEventListener('click',function(){openItem(it.cat,it);});
-    wrap.appendChild(hit);wrap.appendChild(mini);
+    if(sortMode){
+      var ord=h('div','ord');
+      var up=h('button',null,'↑'),dn=h('button',null,'↓');
+      up.disabled=(idx===0);dn.disabled=(idx===items.length-1);
+      up.addEventListener('click',function(){moveItem(it,-1);});
+      dn.addEventListener('click',function(){moveItem(it,1);});
+      ord.appendChild(up);ord.appendChild(dn);
+      wrap.appendChild(hit);wrap.appendChild(ord);
+    }else{
+      var mini=h('button','mini','✎');
+      bindPress(hit,function(){onHit(it);},function(){openEntry(it,shift(todayKey(),-1));});
+      mini.addEventListener('click',function(){openItem(it.cat,it);});
+      wrap.appendChild(hit);wrap.appendChild(mini);
+    }
     list.appendChild(wrap);
   });
 }
@@ -690,14 +775,48 @@ function openItem(cat,it){
   if(!it)setTimeout(function(){$('fName').focus();},260);
 }
 
-/* ---------- 数值输入 ---------- */
-var numCtx=null;
-function openNum(it){
-  numCtx=it;
+/* ---------- 数值输入 / 补记 ---------- */
+var numCtx=null,numDay=null;
+function defValOf(it,day){
+  var r=recOf(day,it.id);
+  if(it.unit==='count')return r?r.n:1;
+  if(r&&r.v)return r.v;
+  return lastValOf(it);
+}
+function setNumDay(k){
+  numDay=k;
+  $('fDate').classList.add('hidden');
+  $('fNum').value=defValOf(numCtx,k);
+  buildDays();updNote();
+}
+function buildDays(){
+  var box=$('fDay');box.innerHTML='';
+  var quick=[[0,'今天'],[-1,'昨天'],[-2,'前天']];
+  quick.forEach(function(o){
+    var k=shift(todayKey(),o[0]);
+    var b=h('button',k===numDay?'on':'',o[1]);
+    b.addEventListener('click',function(){setNumDay(k);});
+    box.appendChild(b);
+  });
+  var known=quick.map(function(o){return shift(todayKey(),o[0]);});
+  var b4=h('button',known.indexOf(numDay)<0?'on':'','更早');
+  b4.addEventListener('click',function(){
+    var d=$('fDate');d.classList.remove('hidden');d.value=numDay;d.focus();
+  });
+  box.appendChild(b4);
+}
+function updNote(){
+  var r=recOf(numDay,numCtx.id);
+  var have=r?(numCtx.unit==='min'?(r.v+' 分钟'):numCtx.unit==='yuan'?('¥'+r.v):(r.n+' 次')):'还没记';
+  $('nNum').textContent=(numDay===todayKey()?'记到今天 · ':'正在补记 → '+numDay.replace(/-/g,'/')+' 周'+wk(numDay)+' · ')+'这一天已有：'+have;
+}
+function openEntry(it,day){
+  numCtx=it;numDay=day||todayKey();
   $('shNumTitle').textContent=it.name;
-  $('lNum').textContent=it.unit==='min'?'记录分钟数':(it.unit==='yuan'?'省了多少元':'记几次');
-  var cur=recOf(todayKey(),it.id);
-  $('fNum').value=(it.unit==='count')?(cur?cur.n:1):lastValOf(it);
+  $('lNum').textContent=it.unit==='min'?'多少分钟':(it.unit==='yuan'?'省了多少钱（元）':'记几次');
+  $('fDate').classList.add('hidden');
+  buildDays();updNote();
+  $('fNum').value=defValOf(it,numDay);
   openSheet('shNum');
   setTimeout(function(){$('fNum').focus();$('fNum').select();},260);
 }
@@ -745,7 +864,7 @@ function render(){
 $('tabs').addEventListener('click',function(e){
   var btn=e.target.closest('button');
   if(!btn)return;
-  tab=btn.dataset.tab;window.scrollTo(0,0);render();
+  tab=btn.dataset.tab;sortMode=false;window.scrollTo(0,0);render();
 });
 
 $('fCat').addEventListener('click',function(e){
@@ -753,6 +872,12 @@ $('fCat').addEventListener('click',function(e){
 });
 
 $('btnAddCat').addEventListener('click',function(){openItem(tab==='today'?'invest':tab);});
+$('btnSort').addEventListener('click',function(){
+  sortMode=!sortMode;
+  toast(sortMode?'点 ↑ ↓ 调顺序，调完点右上角「完成」':'顺序已保存');
+  renderCat(tab==='today'?'invest':tab);
+});
+$('fDate').addEventListener('change',function(){if(this.value)setNumDay(this.value);});
 $('btnMgr').addEventListener('click',function(){renderMgr();openSheet('shMgr');});
 $('btnMgrAdd').addEventListener('click',function(){
   closeSheet('shMgr');openItem(tab==='today'?'invest':tab);
@@ -794,9 +919,17 @@ $('btnItemDel').addEventListener('click',function(){
 $('btnNumOk').addEventListener('click',function(){
   var v=Number($('fNum').value||0);
   if(!numCtx||!(v>0)){closeSheet('shNum');return;}
-  if(numCtx.unit==='count'){for(var i=0;i<v;i++)bump(numCtx,1);}
-  else bump(numCtx,v);
-  toast('已记：'+numCtx.name+' '+(numCtx.unit==='min'?(' '+v+' 分钟'):numCtx.unit==='yuan'?(' ¥'+v):(' ×'+v)));
+  var it=numCtx,day=numDay||todayKey(),msg='';
+  if(it.unit==='count'){
+    var can=it.max?Math.min(v,capLeft(it,day)):v;
+    if(can<=0){toast('「'+it.name+'」'+dayText(day)+'已经记满了');closeSheet('shNum');render();return;}
+    for(var i=0;i<can;i++)bump(it,1,day);
+    msg='已记：'+it.name+' ×'+can+(can<v?('（每天最多 '+it.max+' 次）'):'');
+  }else{
+    bump(it,v,day);
+    msg='已记：'+it.name+(it.unit==='min'?(' '+v+' 分钟'):(' ¥'+v));
+  }
+  toast(dayText(day)+' · '+msg);
   closeSheet('shNum');render();
 });
 
@@ -828,6 +961,11 @@ document.addEventListener('visibilitychange',function(){if(!document.hidden)rend
 /* ---------- 启动 ---------- */
 render();
 if(!S.log[todayKey()])setTimeout(function(){toast('挑一件最轻的，先点一下试试');},600);
+var lastDay=todayKey();
+setInterval(function(){
+  var k=todayKey();
+  if(k!==lastDay){lastDay=k;window.scrollTo(0,0);render();toast('新的一天：'+k.replace(/-/g,'/'));}
+},15000);
 
 })();
 </script>
