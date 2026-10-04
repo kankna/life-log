@@ -194,6 +194,18 @@ button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
 .dayc button.on{border-color:currentColor;color:var(--tx);background:var(--card2)}
 .note{font-size:12px;color:var(--tx3);margin:-3px 0 13px;line-height:1.55}
 .tiny.on{border-color:var(--invest);color:var(--invest)}
+/* ---- v3 修正与撤销 ---- */
+.slt{width:100%;padding:11px 12px;border-radius:11px;background:#12151a;border:1px solid var(--line);color:var(--tx);font-size:14px;font-family:inherit;appearance:none}
+html[data-theme="light"] .slt{background:#f4f6f9}
+.toast.act{display:flex;align-items:center;gap:6px;padding-right:7px;pointer-events:auto;max-width:88vw}
+.toast .tb{flex:none;border:none;background:transparent;color:#4ade80;font-size:13.5px;font-weight:750;padding:3px 10px;border-radius:999px;font-family:inherit}
+.toast .tb:active{background:rgba(74,222,128,.18)}
+html[data-theme="light"] .toast .tb{color:#f0f4f8;background:rgba(255,255,255,.14)}
+.todaylist .row{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line)}
+.todaylist .row:last-child{border-bottom:none}
+.todaylist .em2{flex:none;width:20px;text-align:center;font-size:15px}
+.todaylist .nm2{flex:1;min-width:0;font-size:13.5px;color:var(--tx2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.todaylist .vv{flex:none;font-size:12.5px;color:var(--tx3);font-variant-numeric:tabular-nums}
 </style>
 <script>
 (function(){try{
@@ -217,6 +229,7 @@ button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
     </div>
     <div style="display:flex;gap:8px;align-items:center">
       <span class="badge" id="hState"><i></i>—</span>
+      <button class="iconbtn hidden" id="btnUndoTop" aria-label="撤销上一步" title="撤销上一步">↩</button>
       <button class="iconbtn" id="btnTheme" aria-label="白天/黑夜" title="白天/黑夜"></button>
       <button class="iconbtn" id="btnMgr" aria-label="管理">☰</button>
     </div>
@@ -319,6 +332,27 @@ button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
   </div>
 </div>
 
+<!-- 记录修正抽屉 -->
+<div class="sheet" id="shRec">
+  <div class="bk" data-close></div>
+  <div class="pn">
+    <div class="handle"></div>
+    <h3 id="recTitle">修正这条记录</h3>
+    <div class="fld"><label>记到哪天</label><div class="dayc" id="rDay"></div>
+      <input id="rDate" type="date" class="hidden" style="margin-top:9px"></div>
+    <div class="fld"><label id="lRecNum">次数</label><input id="rNum" type="number" inputmode="decimal" placeholder="0"></div>
+    <div class="fld"><label>算在哪件事上</label><select id="rItem" class="slt"></select></div>
+    <div class="note" id="rNote">—</div>
+    <div class="rowbtn">
+      <button class="b3" id="btnRecDel">删除这条</button>
+      <button class="b1" id="btnRecSave">保存修正</button>
+    </div>
+    <div class="rowbtn" style="margin-top:9px">
+      <button class="b2" id="btnRecToItem">改这件事本身（名字/分类/分量）</button>
+    </div>
+  </div>
+</div>
+
 <!-- 管理抽屉 -->
 <div class="sheet" id="shMgr">
   <div class="bk" data-close></div>
@@ -397,6 +431,23 @@ var S;
 try{var raw=localStorage.getItem(LS);S=raw?JSON.parse(raw):fresh();}catch(e){S=fresh();}
 if(!S||!S.items||!S.items.length)S=fresh();
 function save(){try{localStorage.setItem(LS,JSON.stringify(S));}catch(e){toast('存储空间不足');}}
+
+/* ---------- 撤销栈 ---------- */
+var UNDO_MAX=15;
+function snap(label){
+  if(!S.undo)S.undo=[];
+  try{S.undo.push({t:Date.now(),label:label||'操作',items:JSON.parse(JSON.stringify(S.items)),log:JSON.parse(JSON.stringify(S.log))});}catch(e){}
+  if(S.undo.length>UNDO_MAX)S.undo.shift();
+}
+function canUndo(){return !!(S.undo&&S.undo.length);}
+function undoStep(){
+  if(!canUndo()){toast('没有可以撤销的步骤了');return false;}
+  var u=S.undo.pop();
+  S.items=u.items||S.items;S.log=u.log||{};
+  save();render();
+  toast('已撤销：'+u.label);
+  return true;
+}
 function migrate(){
   if((S.v||1)<2){
     DEFAULTS.forEach(function(d){
@@ -505,22 +556,26 @@ function lastValOf(it){
   }
   return it.unit==='min'?20:10;
 }
-function undoLast(it){
-  var day=todayKey(),r=recOf(day,it.id);
-  if(!r||!r.n)return;
-  r.n--;
-  if(r.n<=0){delete S.log[day][it.id];}
-  else if(it.unit==='min'||it.unit==='yuan'){r.v=Math.round(r.v*(r.n/(r.n+1))*100)/100;}
-  save();
-}
+
 
 /* ---------- 通用 ---------- */
 function $(id){return document.getElementById(id);}
 function h(tag,cls,html){var e=document.createElement(tag);if(cls)e.className=cls;if(html!=null)e.innerHTML=html;return e;}
 function esc(s){return String(s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
 var toastT;
-function toast(msg){var t=$('toast');t.textContent=msg;t.classList.add('on');
-  clearTimeout(toastT);toastT=setTimeout(function(){t.classList.remove('on');},1700);}
+function toast(msg,actLabel,actFn){
+  var t=$('toast');t.innerHTML='';
+  var sp=document.createElement('span');sp.textContent=msg;t.appendChild(sp);
+  if(actLabel&&actFn){
+    t.classList.add('act');
+    var b=document.createElement('button');b.className='tb';b.textContent=actLabel;
+    b.addEventListener('click',function(e){e.stopPropagation();t.classList.remove('on');actFn();});
+    t.appendChild(b);
+  }else t.classList.remove('act');
+  t.classList.add('on');
+  clearTimeout(toastT);
+  toastT=setTimeout(function(){t.classList.remove('on');},actLabel?4500:1700);
+}
 function openSheet(id){$(id).classList.add('open');document.body.style.overflow='hidden';}
 function closeSheet(id){$(id).classList.remove('open');document.body.style.overflow='';}
 function segSet(id,v){Array.prototype.forEach.call($(id).children,function(b){b.classList.toggle('on',b.dataset.v===v);});}
@@ -589,6 +644,7 @@ function renderToday(){
     box.appendChild(row);
   });
   renderQuick(ensureQuick());
+  renderDone(ensureDone());
 }
 
 function ensureQuick(){
@@ -728,9 +784,10 @@ function onHit(it,day){
     return;
   }
   if(it.unit==='count'){
+    snap('记「'+it.name+'」');
     var r=bump(it,1,day);
     try{if(navigator.vibrate)navigator.vibrate(8);}catch(e){}
-    toast(dayText(day)+' · '+it.name+(it.max?(' '+r.n+'/'+it.max):(r.n>1?(' 第 '+r.n+' 次'):' 记上了')));
+    toast(dayText(day)+' · '+it.name+(it.max?(' '+r.n+'/'+it.max):(r.n>1?(' 第 '+r.n+' 次'):' 记上了')),'撤销',function(){undoStep();});
     render();
   }else openEntry(it,day);
 }
@@ -758,12 +815,8 @@ function renderCat(cat){
   head.innerHTML='<div class="rail-top"><span class="rail-name">今天这个分类</span>'+
     '<span class="rail-val" style="color:'+CAT[cat].c+'">'+val+'</span></div>'+
     '<div class="bt-txt" style="margin-top:6px">'+catHint(cat)+'</div>'+
-    (lastId?'<button class="addbar" style="margin:13px 0 0" id="btnUndo">↩ 撤销最近一次</button>':'');
-  if(lastId){
-    $('btnUndo').addEventListener('click',function(){
-      undoLast(byId(lastId));toast('已撤销一次');render();
-    });
-  }
+    (canUndo()?'<button class="addbar" style="margin:13px 0 0" id="btnUndoCat">↩ 撤销上一步'+(S.undo.length>1?('（还有 '+S.undo.length+' 步）'):'')+'</button>':'');
+  if($('btnUndoCat'))$('btnUndoCat').addEventListener('click',function(){undoStep();});
   var list=$('itemList');list.innerHTML='';
   if(!items.length)list.appendChild(h('div','empty','这个分类还是空的。<br>点下面的按钮加一件事。'));
   items.forEach(function(it,idx){
@@ -793,7 +846,9 @@ function renderCat(cat){
     }else{
       var mini=h('button','mini','✎');
       bindPress(hit,function(){onHit(it);},function(){openEntry(it,shift(todayKey(),-1));});
-      mini.addEventListener('click',function(){openItem(it.cat,it);});
+      mini.addEventListener('click',function(){
+        if(recOf(day,it.id))openRec(it,day);else openItem(it.cat,it);
+      });
       wrap.appendChild(hit);wrap.appendChild(mini);
     }
     list.appendChild(wrap);
@@ -894,6 +949,7 @@ function render(){
   var b=$('hState');b.className='badge '+st.cls;b.innerHTML='<i></i>'+st.n;
   Array.prototype.forEach.call($('tabs').children,function(x){x.classList.toggle('on',x.dataset.tab===tab);});
   $('hSub').textContent=day.replace(/-/g,'/')+' 周'+wk(day);
+  if($('btnUndoTop'))$('btnUndoTop').classList.toggle('hidden',!canUndo());
   if(tab==='today'){
     $('pgToday').classList.remove('hidden');$('pgCat').classList.add('hidden');
     $('hTitle').textContent='今天';
@@ -913,8 +969,14 @@ $('tabs').addEventListener('click',function(e){
   tab=btn.dataset.tab;sortMode=false;window.scrollTo(0,0);render();
 });
 
-$('fCat').addEventListener('click',function(e){
-  if(e.target.tagName==='BUTTON')syncBt();
+['fCat','fUnit','fWeight','fBt'].forEach(function(id){
+  $(id).addEventListener('click',function(e){
+    var b=e.target&&e.target.closest?e.target.closest('button'):null;
+    if(!b||!this.contains(b))return;
+    Array.prototype.forEach.call(this.children,function(x){x.classList.toggle('on',x===b);});
+    if(id==='fCat')syncBt();
+    try{if(navigator.vibrate)navigator.vibrate(7);}catch(e2){}
+  });
 });
 
 $('btnAddCat').addEventListener('click',function(){openItem(tab==='today'?'invest':tab);});
@@ -969,13 +1031,15 @@ $('btnNumOk').addEventListener('click',function(){
   if(it.unit==='count'){
     var can=it.max?Math.min(v,capLeft(it,day)):v;
     if(can<=0){toast('「'+it.name+'」'+dayText(day)+'已经记满了');closeSheet('shNum');render();return;}
+    snap('记「'+it.name+'」');
     for(var i=0;i<can;i++)bump(it,1,day);
     msg='已记：'+it.name+' ×'+can+(can<v?('（每天最多 '+it.max+' 次）'):'');
   }else{
+    snap('记「'+it.name+'」');
     bump(it,v,day);
     msg='已记：'+it.name+(it.unit==='min'?(' '+v+' 分钟'):(' ¥'+v));
   }
-  toast(dayText(day)+' · '+msg);
+  toast(dayText(day)+' · '+msg,'撤销',function(){undoStep();});
   closeSheet('shNum');render();
 });
 
@@ -1041,6 +1105,122 @@ $('fTheme').addEventListener('click',function(e){
 $('btnTheme').addEventListener('click',function(){
   setTheme(document.documentElement.getAttribute('data-theme')==='dark'?'light':'dark');
 });
+
+/* ---------- 记录修正 ---------- */
+var recCtx=null,recDay=null,recFrom=null;
+function openRec(it,day){
+  recCtx=it;recDay=day||todayKey();recFrom=recDay;
+  var r=recOf(recDay,it.id);
+  $('recTitle').textContent='修正 · '+it.name;
+  $('lRecNum').textContent=it.unit==='min'?'多少分钟':(it.unit==='yuan'?'省了多少钱（元）':'记了几次');
+  $('rNum').value=r?(it.unit==='count'?r.n:r.v):1;
+  buildRecDays();buildRecItems(it.id);updRecNote();
+  openSheet('shRec');
+}
+function buildRecDays(){
+  var box=$('rDay');box.innerHTML='';
+  var quick=[[0,'今天'],[-1,'昨天'],[-2,'前天']];
+  quick.forEach(function(o){
+    var k=shift(todayKey(),o[0]);
+    var b=h('button',k===recDay?'on':'',o[1]);
+    b.addEventListener('click',function(){setRecDay(k);});
+    box.appendChild(b);
+  });
+  var known=quick.map(function(o){return shift(todayKey(),o[0]);});
+  var b4=h('button',known.indexOf(recDay)<0?'on':'','更早');
+  b4.addEventListener('click',function(){var d=$('rDate');d.classList.remove('hidden');d.value=recDay;d.focus();});
+  box.appendChild(b4);
+}
+function setRecDay(k){recDay=k;$('rDate').classList.add('hidden');buildRecDays();updRecNote();}
+function buildRecItems(sel){
+  var sl=$('rItem');sl.innerHTML='';
+  ORD.forEach(function(c){
+    var its=S.items.filter(function(x){return x.cat===c;});
+    if(!its.length)return;
+    var g=document.createElement('optgroup');g.label=CAT[c].n;
+    its.forEach(function(x){
+      var o=document.createElement('option');o.value=x.id;o.textContent=x.name;
+      if(x.id===sel)o.selected=true;
+      g.appendChild(o);
+    });
+    sl.appendChild(g);
+  });
+}
+function updRecNote(){
+  var id=$('rItem').value,it=byId(id),r=recOf(recDay,id);
+  var have=r?(it&&it.unit==='min'?(r.v+' 分钟'):it&&it.unit==='yuan'?('¥'+r.v):(r.n+' 次')):'还没记';
+  $('rNote').textContent=recDay.replace(/-/g,'/')+' 周'+wk(recDay)+' · 这一天已有：'+have+(id===recCtx.id?'':' · 保存后改挂到「'+(it?it.name:'')+'」');
+}
+function dropRec(day,id){
+  if(!S.log[day])return;
+  delete S.log[day][id];
+  if(!Object.keys(S.log[day]).length)delete S.log[day];
+}
+function putRec(day,id,val){
+  if(!S.log[day])S.log[day]={};
+  var it=byId(id),old=S.log[day][id]||{n:0,v:0};
+  if(it&&it.unit==='count')S.log[day][id]={n:val,v:val};
+  else S.log[day][id]={n:Math.max(old.n,1),v:val};
+}
+$('rItem').addEventListener('change',updRecNote);
+$('rDate').addEventListener('change',function(){if(this.value)setRecDay(this.value);});
+
+$('btnRecSave').addEventListener('click',function(){
+  if(!recCtx)return;
+  var id=$('rItem').value,it=byId(id),v=Number($('rNum').value||0);
+  if(!it){toast('没找到这件事');return;}
+  if(!(v>0)){toast('数值要大于 0；想清掉就点「删除这条」');return;}
+  snap('修正「'+recCtx.name+'」');
+  if(id!==recCtx.id||recDay!==recFrom)dropRec(recFrom,recCtx.id);
+  putRec(recDay,id,v);
+  save();closeSheet('shRec');render();
+  toast('已改：'+it.name+' · '+dayText(recDay),'撤销',function(){undoStep();});
+});
+
+$('btnRecDel').addEventListener('click',function(){
+  if(!recCtx)return;
+  snap('删掉「'+recCtx.name+'」这条记录');
+  dropRec(recFrom,recCtx.id);
+  save();closeSheet('shRec');render();
+  toast('已删除这条记录','撤销',function(){undoStep();});
+});
+
+$('btnRecToItem').addEventListener('click',function(){
+  var it=recCtx;if(!it)return;
+  closeSheet('shRec');openItem(it.cat,it);
+});
+
+$('btnUndoTop').addEventListener('click',function(){undoStep();});
+
+/* ---------- 今天记了 ---------- */
+function ensureDone(){
+  var q=$('doneBox');
+  if(!q){
+    var qb=$('quickBox');if(!qb)return null;
+    q=h('div','card');q.id='doneBox';
+    qb.parentNode.insertBefore(q,qb.nextSibling);
+  }
+  return q;
+}
+function renderDone(box){
+  if(!box)return;
+  var day=todayKey(),d=S.log[day]||{},rows=[];
+  S.items.forEach(function(it){var r=d[it.id];if(r&&r.n)rows.push({it:it,r:r});});
+  if(!rows.length){
+    box.innerHTML='<div class="sec-h" style="margin:0 0 6px"><h2>今天记了</h2></div><div class="bt-txt">还什么都没记。</div>';
+    return;
+  }
+  var html='<div class="sec-h" style="margin:0 0 4px"><h2>今天记了</h2><span class="cnt">点 ✎ 可改日期或归属</span></div><div class="todaylist">';
+  rows.forEach(function(o){
+    var show=o.it.unit==='min'?(o.r.v+' 分钟'):o.it.unit==='yuan'?('¥'+o.r.v):(o.r.n+' 次');
+    html+='<div class="row"><span class="em2">'+(o.it.em||'路')+'</span><span class="nm2">'+esc(o.it.name)+'</span><span class="vv">'+show+'</span><button class="tiny" data-rec="'+o.it.id+'">✎</button></div>';
+  });
+  html+='</div>';
+  box.innerHTML=html;
+  Array.prototype.forEach.call(box.querySelectorAll('[data-rec]'),function(b){
+    b.addEventListener('click',function(){openRec(byId(b.dataset.rec),todayKey());});
+  });
+}
 
 /* ---------- 启动 ---------- */
 applyTheme();
